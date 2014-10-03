@@ -1,0 +1,134 @@
+Some information about the DosQProcStatus() under OS/2 1.x
+
+Kai Uwe Rommel, rommel@lan.informatik.tu-muenchen.dbp.de
+08/19/90
+
+This is a message which I found in some PD software from
+listserv@blekul11.bitnet:
+
+Date:  10-19-89  00:29
+From:  Franz Krainer
+To:    All
+Subj:  More About The Function Behind Ps.exe And Pstat.exe
+
+The undocumented function in OS/2 v1.2 which is used by PSTAT.EXE and PS.EXE
+to get system information about processes, threads etc. has to be declared in
+the following way:
+
+/***   DosQProcStatus
+ *
+ *   Fills a buffer with system information about threads, processes,
+ *   dynylink-libraries, system semaphores and named shared segments.
+ *
+ */
+USHORT APIENTRY DosQProcStatus(
+        PVOID pBuf,               /* address of a transfer buffer  */
+        USHORT cbBuf);            /* size of buffer in bytes       */
+
+pBuf is the adress of a buffer, cbBuf is the size of the buffer. OS/2
+fills this buffer with system information. The amount of information
+you will get depends on how many system resources are actually used.
+The size of the buffer (and therefore the value of cbBuf) should be
+around 4 kBytes. This should be enough, even in the case of a heavy
+loaded system. The data you will get back is structured as a linked
+list. Each entry starts with a 16-bit code (0001 = thread information
+entry, 0004 = named shared segment etc.). The second 16-bit value is
+the pointer to the next entry followed by specific information about
+the entry. Franz. --- FD 2.00 * Origin: Ockham's Razor
+(Vienna/Austria) (2:310/11.17)
+
+[End of message]
+
+There was other information about the structure of the buffer.
+I had to correct it at some points. Here is a summary of what I know.
+
+The buffer is a sequence of USHORT values, a (varying) number of them
+builds each record. These records are ordered in a linked list. The
+first USHORT of each records is it's type:
+
+  0      process record
+  1      thread record
+  2      module record
+  3      system semaphore record
+  4      shared memory record
+  FFFF   end of buffer
+
+The buffer contains records for each process, thread, module, semaphore
+and shared memory segment currently known by the system. The term
+module refers to a EXE or DLL module here.
+
+The second USHORT of each record is the offset of the next record and
+thus establishes the forward link in the list. The offset is NOT from
+the beginning of the buffer but is the offset of the next record from
+the beginning of the segment in which the buffer is located!
+
+All other USHORT's contain information specific to the record types.
+The offset in the structures listed below is the number of the USHORT
+from the beginning of the record.
+
+
+type 0 (process record):
+
+0 - type (process = 0)
+1 - offset to next record
+2 - PID
+3 - parent PID
+4 - screen session ID
+5 - module handle of the EXE running for this process
+(other unknown information)
+
+
+type 1 (thread record)
+
+0 - type (thread = 1)
+1 - offset to next record
+2 - some handle number ?
+3 - PID of process to which this thread belongs
+4 - thread ID
+(other unknown information)
+
+
+type 2 (module record)
+These are records for modules (EXE and DLL) loaded either by
+DosExecPgm (EXE) or DosLoadModule(DLL).
+
+0 - type (module = 2)
+1 - offset to next record
+2 - module handle
+3 - number of dependencies
+4 - offset to list of dependencies (offset of the 6th word below)
+5 - offset to module name
+6 - list of dependent module handles
+..
+  - module name (null-terminated string)
+(other unknown information)
+
+
+type 3 (systen semaphore record)
+
+0 - type (semaphore = 3)
+1 - offset to next record
+2 - index ? (seems to refer to owner)
+3 - two bytes (low = number of references, high = number of requests)
+4 - flag ?
+6 - semaphore name (null-terminated string)
+
+
+type 4 (shared memory record)
+
+0 - type (shared memory = 4)
+1 - offset to next record
+2 - handle
+3 - segment selector
+4 - number of references
+6 - name of segment (null-terminated string)
+(other unknown information)
+
+
+Semaphore information is still a bit unclear.
+
+
+The following sample program demonstrates how to use the information
+about processes, threads and modules. The analyzing code in
+parse_processes() was based on the code of the program RUNNING which I
+got from listserv@blekul11 but I corrected and rearranged the code.

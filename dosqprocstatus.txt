@@ -1,0 +1,545 @@
+DosQProcStatus API for IBM OS/2 Version 2.0
+May 11, 1992
+
+
+Warnings
+
+This document includes a written description of the DosQProcStatus API for
+IBM OS/2 Version 2.0.
+
+INTERNATIONAL BUSINESS MACHINES CORPORATION PROVIDES THIS DOCUMENT "AS IS"
+WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY OR FITNESS FOR A
+PARTICULAR PURPOSE.
+
+IN NO EVENT WILL IBM BE LIABLE FOR ANY DAMAGES, INCLUDING BUT NOT LIMITED
+TO ANY LOST PROFITS, LOST SAVINGS OR ANY INCIDENTAL OR CONSEQUENTIAL DAMAGES,
+EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES, OR FOR ANY CLAIM BY YOU
+BASED ON A THIRD PARTY CLAIM.
+
+Some or all of the interfaces described in this document are unpublished.
+IBM reserves the right to change or delete them in future versions of OS/2 at
+IBM's sole discretion, without notice to you.  IBM does not guarentee that
+compatibility of your applications will be maintained with future versions of
+OS/2.
+
+This document could include technical inaccuracies or typographical
+errors.  It is possible that this document may contain reference to, or
+information about, IBM products, programming or services that are not
+announced in your country.  Such references or information must not be
+construed to mean that IBM intends to announce such IBM products, programming
+or services in your country.
+
+IBM may have patents or pending patent applications covering subject
+matter in this document.  The furnishing of this document does not give you
+any license to these patents.  You can send license inquiries, in writing, to
+the IBM Director of Commercial Relations, IBM Corporation, Armonk NY 10504.
+
+Copyright International Business Machines Corporation 1992.  All rights
+reserved.
+
+Note to US Government Users - Documentation related to restricted rights -
+Use, duplication or disclosure is subject to restrictions set forth in GSA
+ADP Schedule Contract with IBM Corp.
+_____________________________________________________________________________
+
+
+
+DosQProcStatus API
+___________________
+
+Purpose
+_______
+
+The DosQProcStatus API is a 16 bit API that returns information that
+summarizes the system resources that are inuse of an OS/2 2.0 system.
+DosQProcStatus reports on the following classes of OS/2 2.0 system resources:
+
+  Processes and Threads
+  Dynamic Link Library Modules
+  16 bit System Semaphores
+  Named Shared Memory Segments
+
+
+
+
+API Calling Sequence
+____________________
+
+The following 16 bit C language function prototype can be used to call the
+DosQProcStatus API:
+
+   extern unsigned far pascal DosQProcStatus(ULONG far *buffer,
+                                             USHORT buffer_size)
+
+         Where:  buffer - is a pointer to a buffer that will be filled
+                          with system resource summary information
+                          records
+                 buffer_size - is the size of the buffer in bytes
+                               (the maximum value of 64KB is typically
+                               the safest sized buffer to use since it
+                               is impossible to predict how much
+                               information a DosQProcStatus call will
+                               return)
+
+         Returns:  0 - indicates correct operation, buffer is now filled
+                       with system resource summary information
+                       records
+                   non-zero - error returns
+
+         Pointers: The OS/2 Process Status Utility (PSTAT) uses a conversion
+                   formula to convert the pointers that are returned by
+                   DosQProcStatus.
+
+                   #define CONVERT(fp) (*((unsigned far*) &(fp) + 1) = QSsel)
+
+                   Where:  fp - is a pointer that points to the head of a
+                                record structure.
+                           QSel - is the 16 bit selector for the segment
+                                  that contains the DosQProcStatus
+                                  buffer.
+
+
+
+
+Linker Considerations
+______________________
+
+In order to successfully resolve DosQProcStatus function calls in your
+program, the following lines must be added to the Linker Definition (DEF) file:
+
+IMPORTS
+DOSQPROCSTATUS=DOSCALL1.154
+
+
+
+
+Overview
+_________
+
+DosQProcStatus returns a buffer that is filled with a series of sections
+of resource information:
+
+   First, a section that contains an array of pointers to the other sections
+in the buffer.
+
+   Second, a small global data section that contains system-wide
+information.  In OS/2 2.0 the only value of interest in this section is the
+total number of threads in the system at the time the DosQProcStatus call was
+made.
+   
+   Third, a section consisting of Process and Thread records.  There is one
+Process record for each process in the system.  Each Process record is
+immediately followed by a set of Thread records (one Thread record for each
+thread within the process).  Process records contain arrays of resource
+identifiers (16 bit semaphore indices, dynamic link library handles and
+shared memory segment handles) that identify the resources that the process
+currently has in use.  The handles and indices can be used to indirectly
+point to 16 bit semaphore records, dynamic link library records and shared
+memory segment records that reside in the subsequent sections of the buffer.
+
+   Fourth, a section consisting of 16 Bit System Semaphore records.  This
+section is headed by a small record that contains some summary
+information concerning 16 bit system semaphores.  The summary record is
+followed by a series of 16 Bit System Semaphore records.  Each record
+characterizes a separate 16 bit system semaphore.  Among other information,
+each record contains the name of the 16 bit system semaphore, how many
+processes have opened it, and what thread (if any) currently owns it.
+
+   Fifth, a section consisting of Executable Module records.  Program (.EXE)
+files, dynamic link library (.DLL) modules and device driver (.SYS) modules
+are all examples of executable modules.  Each record characterizes a separate
+executable module.  Each record includes the full pathname of the module, the
+module's handle and an array of handles of the DLL modules that are directly
+referenced by the module.  The full pathname of a process is obtained from
+the Executable Module record of its program file module (which is pointed to
+by the .EXE module handle value contained in its Process record).
+
+   Sixth, a section consisting of Shared Memory Segment records.  Each
+record includes the handle of the segment, the 16 bit selector associated
+with the segment, the number of processes using the segment and the name of
+the segment.
+
+
+
+
+Pointer Record Section
+_______________________
+
+The following pointer record structure is the first section in the buffer.
+It contains pointers to the heads of the system resource information
+sections.
+
+
+typedef struct qsPtrRec_s {
+        qsGrec_t        *pGlobalRec;    /* ptr to the global data section */
+        qsPrec_t        *pProcRec;      /* ptr to process record section  */
+        qsS16Headrec_t  *p16SemRec;     /* ptr to 16 bit sem section      */
+        qsMrec_t        *pShrMemRec;    /* ptr to shared mem section      */
+        qsLrec_t        *pLibRec;       /*ptr to exe module record section*/
+} qsPtrRec_t;
+
+
+
+
+Global Data Section
+___________________
+
+The following C language structure defines the information contained
+within the global data section that describes global system information.
+
+
+typedef struct qsGrec_s {
+        ULONG         cThrds;    /* number of threads in use */
+        ULONG         Reserved;
+        ULONG         Reserved;
+}qsGrec_t;
+
+
+
+Process and Thread Data Section
+_______________________________
+The following C language declarations define the information contained
+within the system resource summary information record that describes an OS/2
+process.  Each process record is immediately followed by one or more thread
+records for the given process.   The pointer qsTrec_t points to the first
+thread record structure for the process.
+
+
+typedef struct qsPrec_s {
+        ULONG         RecType;        /* type of record being processed */
+                                      /* process rectype = 1            */
+        qsTrec_t  FAR   *pThrdRec;    /* ptr to 1st thread rec for this prc*/
+        USHORT        pid;            /* process ID */
+        USHORT        ppid;           /* parent process ID */
+        ULONG         type;           /* process type */
+        ULONG         stat;           /* process status */
+        ULONG         sgid;           /* process screen group */
+        USHORT        hMte;           /* program module handle for process */
+        USHORT        cTCB;           /* # of TCBs in use in process */
+        ULONG         Reserved
+        void      FAR Reserved
+        USHORT        c16Sem;         /*# of 16 bit system sems in use by proc*/
+        USHORT        cLib;           /* number of runtime linked libraries */
+        USHORT        cShrMem;        /* number of shared memory handles */
+        USHORT        Reserved
+        USHORT  FAR   *p16SemRec;     /*ptr to head of 16 bit sem inf for proc*/
+        USHORT  FAR   *pLibRec;       /*ptr to list of runtime lib in use by  */
+                                      /*process*/
+        USHORT  FAR   *pShrMemRec;    /*ptr to list of shared mem handles in  */
+                                      /*use by process*/
+        USHORT  FAR   Reserved
+} qsPrec_t;
+
+
+
+/* Process Record structure
+ *      Holds all per process information.
+ *      ________________________________
+ *      |       RecType  (=0x00000001)  |
+ *      |-------------------------------|
+ *      |       pThrdRec                |----|
+ *      |-------------------------------|    |
+ *      |       pid                     |    |
+ *      |-------------------------------|    |
+ *      |       ppid                    |    |
+ *      |-------------------------------|    |
+ *      |       type                    |    |
+ *      |-------------------------------|    |
+ *      |       stat                    |    |
+ *      |-------------------------------|    |
+ *      |       sgid                    |    |
+ *      |-------------------------------|    |
+ *      |       hMte                    |    |
+ *      |-------------------------------|    |
+ *      |       cTCB                    |    |
+ *      |-------------------------------|    |
+ *      |       c16Sem                  |    |
+ *      |-------------------------------|    |
+ *      |       cLib                    |    |
+ *      |-------------------------------|    |
+ *      |       cShrMem                 |    |
+ *      |-------------------------------|    |
+ *      |       p16SemRec               |----|--------|
+ *      |-------------------------------|    |        |
+ *      |       pLibRec                 |----|--------|------|
+ *      |-------------------------------|    |        |      |
+ *      |       pShrMemRec              |----|--------|------|----|
+ *      |-------------------------------|    |        |      |    |
+ *      |       16SemIndx[0]            |<---|--------|      |    |
+ *      |          .                    |    |               |    |
+ *      |          .                    |    |               |    |
+ *      |          .                    |    |               |    |
+ *      |       16SemIndx[c16Sem-1]     |    |               |    |
+ *      |-------------------------------|    |               |    |
+ *      |       hmte[0] (or "name str") |<---|---------------|    |
+ *      |          .                    |    |                    |
+ *      |          .                    |    |                    |
+ *      |          .                    |    |                    |
+ *      |       hmte[cLib-1]            |    |                    |
+ *      |-------------------------------|    |                    |
+ *      |       hshmem[0]               |<---|--------------------|
+ *      |          .                    |    |
+ *      |          .                    |    |
+ *      |          .                    |    |
+ *      |       hshmem[cShrMem-1]       |    |
+ *      |-------------------------------|    |
+ *       * refer to thread rec structure<-----
+ */
+
+
+The pLibRec value points to an array of mte handles that indicate the
+DLL modules that are directly referred to by the process (.EXE) program
+file module.  The cLib value indicates how many dynamic link library module
+handles are in the array.
+
+   The pShrMemRec value points to an array of shared memory handles that
+indicate the shared memory segments that are being used by the process.  The
+cShrMem value indicates how many shared memory segment handles are in the
+array.
+
+   The p16SemRec value points to an array of 16 bit system semaphore indices
+that indicate the 16 bit system semaphores that are being used by the
+process.  The c16Sem value indicates how many 16 bit system semaphore indices
+are in the array.
+
+   The status flag gives an indication of the current status of a process.
+
+The following list defines the possible values for the status flag:
+
+      0x01 - Doing ExitList Processing
+      0x02 - Exiting thread 1
+      0x04 - The whole process is exiting
+      0x10 - Parent cares about termination
+      0x20 - Parent did an exec-and-wait
+      0x40 - Process is dying
+      0x80 - Process in embryonic state
+
+   The following C language declarations define the information contained
+within the system resource summary information record that describes an OS/2
+thread:
+
+
+/* Thread Record structure
+ *      Holds all per thread information.
+ */
+typedef struct qsTrec_s {
+        ULONG         RecType;        /* Record Type */
+                                      /* Thread rectype = 100 */
+        USHORT        tid;            /* thread ID */
+        USHORT        slot;           /* "unique" thread slot number */
+        ULONG         sleepid;        /* sleep id thread is sleeping on */
+        ULONG         priority;       /* thread priority */
+        ULONG         systime;        /* thread system time */
+        ULONG         usertime;       /* thread user time */
+        UCHAR         state;          /* thread state */
+        PADCHAR
+        PADSHORT
+} qsTrec_t;
+
+
+//     Thread Record Structure
+//     ________________________________
+//     |       RecType  (=0x00000100)  |----|
+//     |-------------------------------|    |
+//     |       tid                     |    |
+//     |-------------------------------|    |
+//     |       slot                    |    |
+//     |-------------------------------|    |
+//     |       sleepid                 |    |
+//     |-------------------------------|    |
+//     |       priority                |    |
+//     |-------------------------------|    |
+//     |       systime                 |    |
+//     |-------------------------------|    |
+//     |       usertime                |    |
+//     |-------------------------------|    |
+//     |       state                   |    |
+//     |-------------------------------|    |
+//                                 <--------|
+
+
+
+   The thread slot number is an internal OS/2 thread identifier.  OS/2
+must uniquely identify all threads within the system.
+   The state value gives an indication of the current state of a thread.
+The following list defines some typical thread state values:
+
+      1 - Ready to run
+      2 - Blocked
+      5 - Running
+
+
+   It is outside the scope of this document to further describe and explain
+the various thread state values.
+
+
+16 Bit System Semaphore Section
+________________________________
+   The following C language declarations define the information contained
+within the system resource summary information record that is the first
+record in the 16 bit system semaphore record section of the DosQProcStatus
+buffer:
+
+
+typedef struct qsS16Headrec_s {
+        ULONG         SRecType;   /* semaphore rectype = 3 */
+        ULONG         Reserved;   /* overlays NextRec of 1st qsS16rec_t*/
+        ULONG         Reserved;
+        ULONG         S16TblOff;  /* index of first semaphore,SEE PSTAT OUTPUT*/
+                                  /* System Semaphore Information Section     */
+} qsS16Headrec_t;
+
+//        16 bit System Semaphore Header Record Structure
+//      ________________________________
+//      |       qsS16Headrec            |
+//      |-------------------------------|
+//      |       qsS16rec_s              |____
+//      |_______________________________|    |
+//      |                               |<---|
+//      |       qsS16rec_s              |----
+//      |______________________________ |   |
+//      |                               |<--|
+//      |       qsS16rec_s              |____
+//      |_______________________________|   |
+//      |            .                  |<--|
+//      |-------------------------------|
+//
+//
+
+   The following C language declarations define the 16 bit system semaphore
+records:
+
+
+typedef struct qsS16rec_s {
+        ULONG           NextRec;          /* offset to next record in buffer*/
+        UINT            s_SysSemOwner ;   /* thread owning this semaphore   */
+        UCHAR           s_SysSemFlag ;    /* system semaphore flag bit field*/
+        UCHAR           s_SysSemRefCnt ;  /* number of references to this   */
+                                          /*   system semaphore             */
+        UCHAR           s_SysSemProcCnt ; /*number of requests by sem owner*/
+        UCHAR           Reserved;
+        ULONG           Reserved;
+        UINT            Reserved;
+        CHAR            SemName;          /* start of semaphore name string */
+} qsS16rec_t;
+
+
+//        16 bit System Semaphore Record Structure
+//      ________________________________
+//      |       pNextRec                |----|
+//      |-------------------------------|    |
+//      |                               |    |
+//      |       SysSemOwner             |    |
+//      |       SysSemFlag              |    |
+//      |       SysSemRecCnt            |    |
+//      |       SysSemProcCnt           |    |
+//      |                               |    |
+//      |-------------------------------|    |
+//      |SemName:                       |    |
+//      |       "pathname"              |    |
+//      |-------------------------------|    |
+//                                      <-----
+//
+
+
+The s_SysSemOwner is the slot ID of the semaphore's owner
+
+The s_SysSemFlag is the system semaphore flag bit field which describes
+the type or action the semaphore is performing.
+
+The s_SysSemRecCnt is the number of references to a specific semaphore.
+
+The SemName value is actually the first byte of an ASCIIZ string that is
+the complete pathname of the 16 bit system semaphore.
+
+
+
+Executable Module Section
+___________________________
+The following C language declarations define the information contained
+within the system resource summary information record that describes an OS/2
+DLL module:
+
+
+
+typedef struct qsLrec_s {
+        void  FAR       *pNextRec;    /* pointer to next record in buffer */
+        USHORT        hmte;           /* handle for this mte */
+        USHORT        Reserved;       /* Reserved */
+        ULONG         ctImpMod;       /* # of imported modules in table */
+        ULONG         Reserved        /* Reserved */
+    *** qsLObjrec_t FAR *Reserved;    /* Reserved */
+        UCHAR     FAR *pName;         /* ptr to name string following stru*/
+} qsLrec_t;
+
+
+/*
+ *      System wide MTE information
+ *      ________________________________
+ *      |       pNextRec                |----|
+ *      |-------------------------------|    |
+ *      |       hmte                    |    |
+ *      |-------------------------------|    |
+ *      |       ctImpMod                |    |
+ *      |-------------------------------|    |
+ *      |       Reserved                |    |
+ *      |-------------------------------|    |
+ *      |       Reserved                |    |
+ *      |-------------------------------|    |
+ *      |       pName                   |----|----|
+ *      |-------------------------------|    |    |
+ *      |       imported module handles |    |    |
+ *      |          .                    |    |    |
+ *      |          .                    |    |    |
+ *      |          .                    |    |    |
+ *      |-------------------------------| <--|----|
+ *      |       "pathname"              |    |
+ *      |_______________________________|    |
+ *                                      <-----
+ */
+
+
+   The hmte value is a unique identifier that identifies this DLL
+module.
+
+   The ctImpMod value indicates how many other DLL's this module statically
+references.  The ctImpMod value does not take into account any DLL's that
+were dynamically linked at run time.
+
+   The pName value is a 16 bit pointer that points to an ASCIIZ string that
+follows the DLL module record.  The string contains the pathname of the DLL
+module.
+
+
+Shared Memory Segment Section
+______________________________
+The following C language declarations define the information contained
+within the system resource summary information record that describes an OS/2
+shared memory segment:
+
+
+typedef struct qsMrec_s {
+        ULONG         MemNextRec;       /* offset to next record in buffer */
+        USHORT        hmem;             /* handle for shared memory */
+        USHORT        sel;              /* shared memory selector */
+        USHORT        refcnt;           /* reference count */
+        CHAR          Memname;          /* start of shared memory name string */
+} qsMrec_t;
+
+//     Shared Mem Record Structure
+//     ________________________________
+//     |       MemNextRec              |----|
+//     |-------------------------------|    |
+//     |       hmem                    |    |
+//     |-------------------------------|    |
+//     |       sel                     |    |
+//     |-------------------------------|    |
+//     |       refcnt                  |    |
+//     |-------------------------------|    |
+//     |       Memname                 |    |
+//     |_______________________________|    |
+//                                     <-----
+
+Like the 16 bit system semaphore record, the shared memory segment record
+contains its full ASCIIZ string pathname at the end of the record.

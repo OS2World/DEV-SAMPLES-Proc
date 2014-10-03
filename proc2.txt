@@ -1,0 +1,74 @@
+Since beta versions of OS/2 2.0 became widely available, it really
+started to bother people (me too) that the programs did not work
+any longer which used DosQProcStatus to display informations about
+running processes.
+
+Finally, I found some spare time to decode the buffer returned by
+the 2.0 version of DosQProcStatus. Unfortunately, only a day later
+I got a program posted to comp.binaries.os2 called "killem20" (by
+Rick Fishman) which contained almost all of the information I
+needed and decoded the evening before. However, a few differences
+exist so my work was not all lost.
+
+And, yes, even in the time of OOP and GUI it was real fun again to
+analyse a hex dump printout! Nice opportunity to practise that.
+
+Included is a sample program (PROC2.C) which displays the data in
+the buffer returned by DosQProcStatus.
+
+A few notes (see also the sample program):
+
+- DosQProcStatus does only exist as a 16-bit API. There are no
+  problems calling it from a 16-bit program under OS/2 2.0 and it
+  is also easy to call it from a 32-bit program if the compiler
+  supports such calls. It only has to be declared properly and
+  imported directly via a linker definition file.
+
+- The structure of the returned buffer is *completely* different
+  from OS/2 2.x and in my opinion much better usable by a user
+  program. Under 1.x, one better parsed the buffer completely and
+  built own data structures before using them. Under 2.0 it is not
+  difficult to use the buffer directly if the right structs are
+  declared and used.
+
+- The DosQProcStatus call may not yet be completely bugfree even
+  in the beta version 6.304E of OS/2 2.0. For example, the pointer
+  to the semaphore list in the header does point 16 bytes *before*
+  the actual beginning of the list. I don't know if this has some
+  deeper meaning or is just a bug.
+
+- The 16-bit DosGetPrty API even in 32-bit mode in the sample
+  program is only used because of my lazyness. Using the 2.0 info
+  blocks is much more *ugly* in this simple case where only the
+  priority of the process is wanted.
+
+- The pointers in the returned buffer from DosQProcStatus are
+  always 0:32-bit pointers even if called from a 16-bit program.
+  They have to be converted properly, but this is easy in this
+  special case.
+
+The sample program can be compiled with a 16-bit compiler such as
+Microsoft C 6.00 (which I used) or 5.1 or Zortech C++ (not tested)
+in both small and large data memory models if the symbols M_I86x
+where x is one of SMCL are defined (default in MS C).
+
+A 32-bit compiler such as IBM C Set/2 (tested) can also be used to
+compile the program. Other compilers such as Watcom can be used if
+they support calling 16-bit far pascal API's and __32BIT__ is
+defined. EMX/GCC does not yet support this calling method.
+
+
+
+Kai Uwe Rommel                                      Wed 25-Mar-1992
+
+E-Mail:   rommel@ars.muc.de, rommel@informatik.tu-muenchen.de
+Fax:      +49 89 324 4524
+
+
+------------
+
+IBM recently release a document about the DosQProcStatus() system call
+so I could make a few minor corrections and the addition of the CPU
+time usage fields.
+
+Kai Uwe Rommel                                      Sat 13-Aug-1994
